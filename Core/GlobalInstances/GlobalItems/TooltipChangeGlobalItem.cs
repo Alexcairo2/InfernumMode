@@ -99,6 +99,7 @@ namespace InfernumMode.Core.GlobalInstances.GlobalItems
             {
                 string summoningText = Utilities.GetLocalization("Items.EyeofDesolation.SummoningText").Format(CalamitasShadowBehaviorOverride.CustomName);
                 replaceTooltipText("Tooltip0", summoningText);
+                tooltips.RemoveAll(x => x.Name == "Tooltip1" && x.Mod == "Terraria");
             }
 
             if (InfernumMode.CanUseCustomAIs && item.type == ModContent.ItemType<ProfanedCore>())
