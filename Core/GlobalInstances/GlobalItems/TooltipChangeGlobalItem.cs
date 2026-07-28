@@ -192,7 +192,11 @@ namespace InfernumMode.Core.GlobalInstances.GlobalItems
             if (enrageTooltip is null)
                 return;
 
-            int enrageTextStart = enrageTooltip.Text.IndexOf("enrage", StringComparison.OrdinalIgnoreCase);
+            int enrageTextStart = enrageTooltip.Text.IndexOf(localizedEnrageText, StringComparison.OrdinalIgnoreCase);
+            int lineStart = enrageTooltip.Text.LastIndexOf('\n', Math.Max(enrageTextStart - 1, 0));
+            
+            enrageTextStart = lineStart == -1 ? 0 : lineStart + 1;
+
             int enrageTextEnd = enrageTextStart;
 
             // Find where the current line terminates following the instance of the word 'enrage'.
