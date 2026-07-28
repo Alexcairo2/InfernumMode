@@ -64,9 +64,15 @@ namespace InfernumMode.Content.BehaviorOverrides.BossAIs.Deerclops
             Projectile.Center = Projectile.Center.MoveTowards(Main.npc[deerclopsIndex].Center, 1.1f);
 
             // Give the player the madness effect if they leave the circle.
-            Player target = Main.player[Player.FindClosest(Projectile.Center, 1, 1)];
-            if (!target.WithinRange(Projectile.Center, Radius + 12f))
-                target.AddBuff(ModContent.BuffType<Madness>(), 8);
+            foreach (Player player in Main.ActivePlayers)
+            {
+                if (player.dead)
+                    continue;
+
+                //Player target = Main.player[Player.FindClosest(Projectile.Center, 1, 1)];
+                if (!player.WithinRange(Projectile.Center, Radius + 12f) && player.WithinRange(Projectile.Center, 4000f))
+                    player.AddBuff(ModContent.BuffType<Madness>(), 8);
+            }
 
             Time++;
         }
