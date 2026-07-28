@@ -4,6 +4,7 @@ using System.Linq;
 using CalamityMod;
 using CalamityMod.Dusts;
 using CalamityMod.Events;
+using CalamityMod.Graphics.Metaballs;
 using CalamityMod.Items.Mounts;
 using CalamityMod.NPCs;
 using CalamityMod.NPCs.SupremeCalamitas;
@@ -274,8 +275,6 @@ namespace InfernumMode.Content.BehaviorOverrides.BossAIs.SupremeCalamitas
             return SCal.Center + new Vector2(SCal.spriteDirection * -18f, 2f);
         }
 
-        public ArenaWallSystem.Box ArenaBox = null;
-
         public override bool PreAI(NPC npc)
         {
             // Do targeting.
@@ -301,25 +300,26 @@ namespace InfernumMode.Content.BehaviorOverrides.BossAIs.SupremeCalamitas
             // Handle initializations.
             if (npc.localAI[0] == 0f)
             {
-
-                // Define the arena. This is finely picked to be the same as in death mode.
-                Vector2 arenaArea = new(125f, 125f);
+                // Define the logic arena. This is finely picked to be the same as in death mode.
+                Vector2 arenaArea = new(125f, 125f); // Defining this is still needed even with the new Cal arena box system as our override AI references this a lot.
                 npc.Infernum().Arena = Utils.CenteredRectangle(npc.Center, arenaArea * 16f);
+
+                /* Old Code for tile arena.
                 ushort arenaTileType = (ushort)ModContent.TileType<ArenaTile>();
 
-                Point arenaCenter = npc.Infernum().Arena.Center().ToTileCoordinates();
-                arenaCenter.X += 3;
-                arenaCenter.Y += 3;
+                Point logicArenaCenter = npc.Infernum().Arena.Center().ToTileCoordinates();
+                logicArenaCenter.X += 3;
+                logicArenaCenter.Y += 3;
                 int width = npc.Infernum().Arena.Width / 2 / 16 + 1;
                 int height = npc.Infernum().Arena.Height / 2 / 16 + 1;
-                for (int x = arenaCenter.X - width; x <= arenaCenter.X + width; x++)
+                for (int x = logicArenaCenter.X - width; x <= logicArenaCenter.X + width; x++)
                 {
-                    for (int y = arenaCenter.Y - height; y <= arenaCenter.Y + height; y++)
+                    for (int y = logicArenaCenter.Y - height; y <= logicArenaCenter.Y + height; y++)
                     {
                         if (!WorldGen.InWorld(x, y, 2))
                             continue;
 
-                        if ((x == arenaCenter.X - width || x == arenaCenter.X + width || y == arenaCenter.Y - height || y == arenaCenter.Y + height) && !Main.tile[x, y].HasTile)
+                        if ((x == logicArenaCenter.X - width || x == logicArenaCenter.X + width || y == logicArenaCenter.Y - height || y == logicArenaCenter.Y + height) && !Main.tile[x, y].HasTile)
                         {
                             Main.tile[x, y].TileType = arenaTileType;
                             Main.tile[x, y].Get<TileWallWireStateData>().HasTile = true;
@@ -334,6 +334,7 @@ namespace InfernumMode.Content.BehaviorOverrides.BossAIs.SupremeCalamitas
                         }
                     }
                 }
+                */
 
                 npc.Infernum().Arena.X += 48;
                 npc.Infernum().Arena.Y += 64;
@@ -345,6 +346,161 @@ namespace InfernumMode.Content.BehaviorOverrides.BossAIs.SupremeCalamitas
                 npc.ModNPC<SCalBoss>().spawnArena = true;
                 npc.netUpdate = true;
             }
+
+            //Handle arena box.
+            #region Arena Box
+            Color GetArenaColor(out Color oldColor)
+            {
+                Color color = SCalBoss.GriefColor;
+                oldColor = SCalBoss.GriefColor;
+
+                if (npc.Infernum().ExtraAI[4] == 4f) // ExtraAI[4] is the attack state of dsp. We only want to change the color once Acceptance has started, so we check for attack state 4.
+                {
+                    color = SCalBoss.AcceptanceColor;
+                    oldColor = SCalBoss.EpiphanyColor;
+                }
+                else if (npc.Infernum().ExtraAI[6] >= 3f) // ExtraAI[6] stores currentPhase.
+                {
+                    color = SCalBoss.EpiphanyColor;
+                    oldColor = SCalBoss.LamentColor;
+                }
+                else if (npc.Infernum().ExtraAI[6] == 2f)
+                {
+                    color = SCalBoss.LamentColor;
+                }
+
+                return color;
+            }
+
+            void UpdateArena(ArenaWallSystem.Box box)
+            {
+                if (Main.dedServ || InfernumConfig.Instance.ReducedGraphicsConfig)
+                    return;
+
+                #region Wall Shaders
+                float magicPixelHeightFactor = 1f / TextureAssets.MagicPixel.Height();
+                ScalArenaMetaball.Particle particle = ScalArenaMetaball.SpawnParticle((box.TopLeft + box.BottomLeft) * 0.5f - new Vector2(box.borderThickness * 0.5f + 2f, 0f), Vector2.Zero, 1f);
+                particle.SizeScaling = 0f;
+                particle.TextureToUse = TextureAssets.MagicPixel.Value;
+                particle.Scale = new Vector2(box.borderThickness - 6f, box.borderThickness * 2f + box.Size.Y - 4f);
+                particle.Scale.Y *= magicPixelHeightFactor;
+
+                // Right wall.
+                particle = ScalArenaMetaball.SpawnParticle((box.TopRight + box.BottomRight) * 0.5f + new Vector2(box.borderThickness * 0.5f + 2f, 0f), Vector2.Zero, 1f);
+                particle.SizeScaling = 0f;
+                particle.TextureToUse = TextureAssets.MagicPixel.Value;
+                particle.Scale = new Vector2(box.borderThickness - 6f, box.borderThickness * 2f + box.Size.Y - 4f);
+                particle.Scale.Y *= magicPixelHeightFactor;
+
+                // Top wall.
+                particle = ScalArenaMetaball.SpawnParticle((box.TopRight + box.TopLeft) * 0.5f - new Vector2(0f, box.borderThickness * 0.5f + 2f), Vector2.Zero, 1f);
+                particle.SizeScaling = 0f;
+                particle.TextureToUse = TextureAssets.MagicPixel.Value;
+                particle.Scale = new Vector2(box.borderThickness * 2f + box.Size.X - 4f, box.borderThickness - 6f);
+                particle.Scale.Y *= magicPixelHeightFactor;
+
+                // Bottom wall.
+                particle = ScalArenaMetaball.SpawnParticle((box.BottomLeft + box.BottomRight) * 0.5f + new Vector2(0f, box.borderThickness * 0.5f + 2f), Vector2.Zero, 1f);
+                particle.SizeScaling = 0f;
+                particle.TextureToUse = TextureAssets.MagicPixel.Value;
+                particle.Scale = new Vector2(box.borderThickness * 2f + box.Size.X - 4f, box.borderThickness - 6f);
+                particle.Scale.Y *= magicPixelHeightFactor;
+                #endregion
+
+                #region Wall Metaball Particles
+                // Side particles.
+                for (int i = 0; i < box.Size.Y / 100f; i++)
+                {
+                    Vector2 point = Vector2.Lerp(box.BottomRight, box.TopRight, Main.rand.NextFloat());
+
+                    particle = ScalArenaMetaball.SpawnParticle(point + Vector2.UnitX * 8f, Vector2.Zero, 16f);
+                    particle.SizeScaling = 0.95f;
+
+                    point = Vector2.Lerp(box.TopLeft, box.BottomLeft, Main.rand.NextFloat());
+                    particle = ScalArenaMetaball.SpawnParticle(point - Vector2.UnitX * 8f, Vector2.Zero, 16f);
+                    particle.SizeScaling = 0.95f;
+                }
+
+                // Top and bottom particles.
+                for (int i = 0; i < box.Size.X / 100f; i++)
+                {
+                    Vector2 point = Vector2.Lerp(box.TopLeft, box.TopRight, Main.rand.NextFloat());
+                    particle = ScalArenaMetaball.SpawnParticle(point - Vector2.UnitY * 8f, Vector2.Zero, 16f);
+                    particle.SizeScaling = 0.95f;
+                    point = Vector2.Lerp(box.BottomRight, box.BottomLeft, Main.rand.NextFloat());
+                    particle = ScalArenaMetaball.SpawnParticle(point + Vector2.UnitY * 8f, Vector2.Zero, 16f);
+                    particle.SizeScaling = 0.95f;
+                }
+                #endregion
+            }
+
+            void DrawInfernumArena(ArenaWallSystem.Box box)
+            {
+                // Inside fill.
+                box.DrawBoxWithOffset(box.borderThickness * 0.5f, box.borderThickness, Color.Black * 0.15f);
+
+                // Inner border.
+                box.DrawBoxWithOffset(4f, 2f, box.borderColor * 0.15f);
+
+                // Outer border.
+                box.DrawBoxWithOffset(box.borderThickness - 2f, 2f, box.borderColor);
+            }
+
+            // Create the arena. We use the base Cal variables since its neccessary to update the meatball colors.
+            if (npc.ModNPC<SCalBoss>().ArenaBox is null)
+            {
+                int npcIndex = npc.whoAmI;
+                int npcType = npc.type;
+
+                npc.ModNPC<SCalBoss>().ArenaBox = new ArenaWallSystem.Box
+                {
+                    position = npc.Center,
+
+                    // The initial value is doubled here to match the original arena system's initialization behavior. NewDimensions corrects it immediately below.
+                    boxDimensions = new Vector4(1000f) * 2f,
+
+                    borderThickness = 2000f, //2000f is the base cal ammount, 16f would be one tile wide.
+
+                    borderColor = SCalBoss.GriefColor,
+
+                    RemovalCondition = () => !Main.npc.IndexInRange(npcIndex) || !Main.npc[npcIndex].active || Main.npc[npcIndex].type != npcType,
+
+                    UpdateBox = UpdateArena,
+                    DrawBox = DrawInfernumArena,
+
+                    DespawnAction = box =>
+                    {
+                        box.borderThickness *= 0.9f;
+
+                        if (box.borderThickness < 4f)
+                            return true;
+
+                        UpdateArena(box);
+                        return false;
+                    }
+                };
+
+                ArenaWallSystem.ActiveBoxes.Add(npc.ModNPC<SCalBoss>().ArenaBox);
+            }
+
+            ArenaWallSystem.Box arenaBox = npc.ModNPC<SCalBoss>().ArenaBox;
+
+            // The logical arena already contains our +48/+64 adjustment, so we keep the visual box aligned with that exact rectangle, with a very slight offset to better visually match our logic arena.
+            arenaBox.position = npc.Infernum().Arena.Center.ToVector2() + new Vector2(5f, -10f);
+                
+            // Smoothly settle into the intended 2000x2000 arena.
+            arenaBox.NewDimensions = Vector4.Lerp(arenaBox.boxDimensions, new Vector4(1000f),0.1f);
+
+            //Update the colors.
+            var color = GetArenaColor(out Color oldColor);
+            if (npc.ModNPC<SCalBoss>().colorCompletion > 1.1f && color != arenaBox.borderColor)
+                npc.ModNPC<SCalBoss>().colorCompletion = 0;
+            if (npc.ModNPC<SCalBoss>().colorCompletion < 1)
+                arenaBox.borderColor = Color.Lerp(oldColor, color, npc.ModNPC<SCalBoss>().colorCompletion);
+            else
+                arenaBox.borderColor = color;
+            npc.ModNPC<SCalBoss>().colorCompletion += 0.003f;
+            #endregion
 
             // Handle music.
             HandleMusicVariables(npc);
