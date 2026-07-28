@@ -5,6 +5,7 @@ using CalamityMod;
 using CalamityMod.Graphics.Metaballs;
 using CalamityMod.NPCs;
 using CalamityMod.Projectiles.Magic;
+using CalamityMod.Systems.Mechanic;
 using InfernumMode.Assets.Effects;
 using InfernumMode.Assets.ExtraTextures;
 using InfernumMode.Common.Graphics.Primitives;
@@ -13,6 +14,7 @@ using Microsoft.Xna.Framework;
 using Terraria;
 using Terraria.ID;
 using Terraria.ModLoader;
+using SCalBoss = CalamityMod.NPCs.SupremeCalamitas.SupremeCalamitas;
 
 namespace InfernumMode.Content.BehaviorOverrides.BossAIs.SupremeCalamitas
 {
@@ -62,10 +64,8 @@ namespace InfernumMode.Content.BehaviorOverrides.BossAIs.SupremeCalamitas
             Projectile.velocity = circlePointDirection;
             Projectile.Center = Main.npc[CalamityGlobalNPC.SCal].Center;
 
-            // Update the laser length.
-            float[] laserLengthSamplePoints = new float[24];
-            Collision.LaserScan(Projectile.Center, Projectile.velocity, Projectile.scale * 24f, MaxLaserLength, laserLengthSamplePoints);
-            LaserLength = laserLengthSamplePoints.Average();
+            // Update the laser length, treating both real tiles and the SCal arena boundary as valid collision surfaces.
+            UpdateLaserLength();
 
             // Create arms on surfaces.
             if (Main.myPlayer == Projectile.owner)
@@ -82,18 +82,40 @@ namespace InfernumMode.Content.BehaviorOverrides.BossAIs.SupremeCalamitas
             Utils.PlotTileLine(Projectile.Center, Projectile.Center + Projectile.velocity * LaserLength, Projectile.width * Projectile.scale, DelegateMethods.CastLight);
         }
 
+        public void UpdateLaserLength()
+        {
+            Vector2 direction = Projectile.velocity.SafeNormalize(Vector2.UnitY);
+
+            // Existing collision against real tiles.
+            float[] laserLengthSamplePoints = new float[24];
+
+            Collision.LaserScan(Projectile.Center, direction, Projectile.scale * 24f, MaxLaserLength, laserLengthSamplePoints);
+
+            float tileCollisionLength = laserLengthSamplePoints.Average();
+
+            // Also treat the SCal arena boundary as a solid surface.
+            float arenaCollisionLength = CalculateArenaCollisionLength(Projectile.Center, direction, Projectile.scale * 12f);
+
+            LaserLength = MathHelper.Min(tileCollisionLength, arenaCollisionLength);
+        }
+
         public void CreateLavaOnSurfaces()
         {
             if (Main.netMode == NetmodeID.Server)
                 return;
 
-            Vector2 endOfLaser = Projectile.Center + Projectile.velocity * LaserLength;
-            RancorLavaMetaball.SpawnParticle(endOfLaser + Main.rand.NextVector2Circular(10f, 10f) + Projectile.velocity * 40f, 320f);
+            Vector2 direction = Projectile.velocity.SafeNormalize(Vector2.UnitY);
+            Vector2 endOfLaser = Projectile.Center + direction * LaserLength;
+            RancorLavaMetaball.SpawnParticle(endOfLaser + Main.rand.NextVector2Circular(10f, 10f) + direction * 40f, 320f);
         }
 
         public void CreateTileHitEffects()
         {
-            Vector2 endOfLaser = Projectile.Center + Projectile.velocity * (LaserLength - Main.rand.NextFloat(12f, 72f));
+            Vector2 direction = Projectile.velocity.SafeNormalize(Vector2.UnitY);
+
+            float effectDistance = MathHelper.Max(LaserLength - Main.rand.NextFloat(12f, 72f), 0f);
+
+            Vector2 endOfLaser = Projectile.Center + direction * effectDistance;
 
             if (Main.rand.NextBool(6))
                 Projectile.NewProjectile(Projectile.GetSource_FromAI(), endOfLaser, Main.rand.NextVector2Circular(4f, 8f), ModContent.ProjectileType<RancorFog>(), 0, 0f, Projectile.owner);
@@ -102,9 +124,72 @@ namespace InfernumMode.Content.BehaviorOverrides.BossAIs.SupremeCalamitas
             {
                 int type = ModContent.ProjectileType<RancorSmallCinder>();
                 float cinderSpeed = Main.rand.NextFloat(2f, 6f);
-                Vector2 cinderVelocity = Vector2.Lerp(-Projectile.velocity, -Vector2.UnitY, 0.45f).RotatedByRandom(0.72f) * cinderSpeed;
+                Vector2 cinderVelocity = Vector2.Lerp(-direction, -Vector2.UnitY, 0.45f).RotatedByRandom(0.72f) * cinderSpeed;
                 Projectile.NewProjectile(Projectile.GetSource_FromAI(), endOfLaser, cinderVelocity, type, 0, 0f, Projectile.owner);
             }
+        }
+
+        private static float CalculateArenaCollisionLength(Vector2 origin, Vector2 direction, float beamRadius)
+        {
+            if (!Main.npc.IndexInRange(CalamityGlobalNPC.SCal))
+                return MaxLaserLength;
+
+            NPC scal = Main.npc[CalamityGlobalNPC.SCal];
+            if (!scal.active)
+                return MaxLaserLength;
+
+            ArenaWallSystem.Box arenaBox = scal.ModNPC<SCalBoss>().ArenaBox;
+
+            if (arenaBox is null)
+                return MaxLaserLength;
+
+            // Inset the valid interior by half the beam width. This makes the edge of the laser collide with the arena rather than its center.
+            float left = arenaBox.TopLeft.X + beamRadius;
+            float right = arenaBox.BottomRight.X - beamRadius;
+            float top = arenaBox.TopLeft.Y + beamRadius;
+            float bottom = arenaBox.BottomRight.Y - beamRadius;
+
+            if (right <= left || bottom <= top)
+                return MaxLaserLength;
+
+            float collisionDistance = MaxLaserLength;
+            const float epsilon = 0.0001f;
+
+            // Test the vertical wall in the beam's travel direction.
+            if (Abs(direction.X) > epsilon)
+            {
+                float wallX = direction.X > 0f ? right : left;
+                float distance = (wallX - origin.X) / direction.X;
+
+                if (distance >= 0f && distance <= MaxLaserLength)
+                {
+                    float intersectionY = origin.Y + direction.Y * distance;
+
+                    if (intersectionY >= top && intersectionY <= bottom)
+                    {
+                        collisionDistance = MathHelper.Min(collisionDistance, distance);
+                    }
+                }
+            }
+
+            // Test the horizontal wall in the beam's travel direction.
+            if (Abs(direction.Y) > epsilon)
+            {
+                float wallY = direction.Y > 0f ? bottom : top;
+                float distance = (wallY - origin.Y) / direction.Y;
+
+                if (distance >= 0f && distance <= MaxLaserLength)
+                {
+                    float intersectionX = origin.X + direction.X * distance;
+
+                    if (intersectionX >= left && intersectionX <= right)
+                    {
+                        collisionDistance = MathHelper.Min(collisionDistance, distance);
+                    }
+                }
+            }
+
+            return Clamp(collisionDistance, 0f, MaxLaserLength);
         }
 
         private float PrimitiveWidthFunction(float completionRatio) => Projectile.scale * 10f;
@@ -137,7 +222,10 @@ namespace InfernumMode.Content.BehaviorOverrides.BossAIs.SupremeCalamitas
         {
             float _ = 0f;
             float width = PrimitiveWidthFunction(0.4f);
-            return Collision.CheckAABBvLineCollision(targetHitbox.TopLeft(), targetHitbox.Size(), Projectile.Center, Projectile.Center + Projectile.velocity * LaserLength, width, ref _);
+
+            Vector2 direction = Projectile.velocity.SafeNormalize(Vector2.UnitY);
+
+            return Collision.CheckAABBvLineCollision(targetHitbox.TopLeft(), targetHitbox.Size(), Projectile.Center, Projectile.Center + direction * LaserLength, width, ref _);
         }
 
         public override void DrawBehind(int index, List<int> drawCacheProjsBehindNPCsAndTiles, List<int> drawCacheProjsBehindNPCs, List<int> drawCacheProjsBehindProjectiles, List<int> drawCacheProjsOverWiresUI, List<int> overWiresUI)
