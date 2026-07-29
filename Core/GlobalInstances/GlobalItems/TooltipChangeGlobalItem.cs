@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using CalamityMod;
@@ -182,35 +182,65 @@ namespace InfernumMode.Core.GlobalInstances.GlobalItems
         }
 
         public static void EditEnrageTooltips(Item item, List<TooltipLine> tooltips)
-        {
-            // Don't do anything if the item doesn't call for a tooltip replacement.
-            if (!EnrageTooltipReplacements.TryGetValue(item.type, out var tooltipReplacement))
-                return;
+{
+    // No hay reemplazo para este objeto.
+    if (!EnrageTooltipReplacements.TryGetValue(item.type, out var tooltipReplacement))
+        return;
 
-            // Don't do anything if the item has no enrage tooltip to reference.
-            string localizedEnrageText = Utilities.GetLocalization("Items.EnrageTooltip").Value.ToLower();
-            var enrageTooltip = tooltips.FirstOrDefault(x => x.Text.Contains(localizedEnrageText, StringComparison.OrdinalIgnoreCase));
-            if (enrageTooltip is null)
-                return;
+    string localizedEnrageText = Utilities.GetLocalization("Items.EnrageTooltip").Value;
 
-            int enrageTextStart = enrageTooltip.Text.IndexOf(localizedEnrageText, StringComparison.OrdinalIgnoreCase);
-            int lineStart = enrageTooltip.Text.LastIndexOf('\n', Math.Max(enrageTextStart - 1, 0));
-            
-            enrageTextStart = lineStart == -1 ? 0 : lineStart + 1;
+    if (string.IsNullOrWhiteSpace(localizedEnrageText))
+        return;
 
-            int enrageTextEnd = enrageTextStart;
+    TooltipLine enrageTooltip = tooltips.FirstOrDefault(x =>
+        !string.IsNullOrEmpty(x.Text) &&
+        x.Text.Contains(localizedEnrageText, StringComparison.OrdinalIgnoreCase));
 
-            // Find where the current line terminates following the instance of the word 'enrage'.
-            while (enrageTextEnd < enrageTooltip.Text.Length && enrageTooltip.Text[enrageTextEnd] != '\n')
-                enrageTextEnd++;
+    if (enrageTooltip == null || string.IsNullOrEmpty(enrageTooltip.Text))
+        return;
 
-            enrageTooltip.Text = enrageTooltip.Text.Remove(enrageTextStart, Math.Min(enrageTextEnd - enrageTextStart, enrageTooltip.Text.Length));
+    int enrageTextStart = enrageTooltip.Text.IndexOf(localizedEnrageText, StringComparison.OrdinalIgnoreCase);
 
-            // If a replacement exists, insert it into the enrage text instead.
-            if (tooltipReplacement is not null)
-                enrageTooltip.Text = enrageTooltip.Text.Insert(enrageTextStart, tooltipReplacement.Value);
-            else
-                enrageTooltip.Text = enrageTooltip.Text.Replace("\n\n", "\n");
-        }
+    if (enrageTextStart < 0)
+        return;
+
+    int lineStart = enrageTooltip.Text.LastIndexOf('\n', Math.Max(enrageTextStart - 1, 0));
+
+    enrageTextStart = lineStart == -1 ? 0 : lineStart + 1;
+
+    if (enrageTextStart < 0 || enrageTextStart > enrageTooltip.Text.Length)
+        return;
+
+    int enrageTextEnd = enrageTextStart;
+
+    while (enrageTextEnd < enrageTooltip.Text.Length &&
+           enrageTooltip.Text[enrageTextEnd] != '\n')
+    {
+        enrageTextEnd++;
+    }
+
+    int removeLength = enrageTextEnd - enrageTextStart;
+
+    if (removeLength < 0)
+        return;
+
+    if (enrageTextStart + removeLength > enrageTooltip.Text.Length)
+        removeLength = enrageTooltip.Text.Length - enrageTextStart;
+
+    if (removeLength > 0)
+        enrageTooltip.Text = enrageTooltip.Text.Remove(enrageTextStart, removeLength);
+
+    if (tooltipReplacement != null &&
+        !string.IsNullOrWhiteSpace(tooltipReplacement.Value))
+    {
+        if (enrageTextStart <= enrageTooltip.Text.Length)
+            enrageTooltip.Text = enrageTooltip.Text.Insert(enrageTextStart, tooltipReplacement.Value);
+    }
+    else
+    {
+        while (enrageTooltip.Text.Contains("\n\n"))
+            enrageTooltip.Text = enrageTooltip.Text.Replace("\n\n", "\n");
+    }
+}
     }
 }
