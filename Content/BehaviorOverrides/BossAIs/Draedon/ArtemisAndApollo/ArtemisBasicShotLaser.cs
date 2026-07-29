@@ -10,7 +10,23 @@ namespace InfernumMode.Content.BehaviorOverrides.BossAIs.Draedon.ArtemisAndApoll
 {
     public class ArtemisBasicShotLaser : ModProjectile
     {
-        public NPC ThingToAttachTo => Main.npc.IndexInRange((int)Projectile.ai[0]) ? Main.npc[(int)Projectile.ai[0]] : null;
+        public NPC ThingToAttachTo
+{
+    get
+    {
+        int index = (int)Projectile.ai[0];
+
+        if (!Main.npc.IndexInRange(index))
+            return null;
+
+        NPC npc = Main.npc[index];
+
+        if (npc == null || !npc.active)
+            return null;
+
+        return npc;
+    }
+}
 
         public const int Lifetime = 30;
 
@@ -35,16 +51,32 @@ namespace InfernumMode.Content.BehaviorOverrides.BossAIs.Draedon.ArtemisAndApoll
         }
 
         public override void AI()
-        {
-            Projectile.scale = LumUtils.Convert01To010(Projectile.timeLeft / (float)Lifetime) * 1.2f;
-            if (Projectile.scale > 1f)
-                Projectile.scale = 1f;
-            Projectile.rotation = Projectile.velocity.ToRotation() + PiOver2;
+{
+    // Obtener la referencia a Artemis una sola vez.
+    NPC artemis = ThingToAttachTo;
 
-            // Stick to Artemis.
-            float positionOffset = ExoMechManagement.ExoTwinsAreInSecondPhase ? 102f : 70f;
-            Projectile.Center = ThingToAttachTo.Center + (ThingToAttachTo.rotation - PiOver2).ToRotationVector2() * positionOffset;
-        }
+    // Si Artemis ya no existe o dejó de estar activo,
+    // destruye el proyectil para evitar NullReferenceException.
+    if (artemis == null || !artemis.active)
+    {
+        Projectile.Kill();
+        return;
+    }
+
+    Projectile.scale = LumUtils.Convert01To010(Projectile.timeLeft / (float)Lifetime) * 1.2f;
+
+    if (Projectile.scale > 1f)
+        Projectile.scale = 1f;
+
+    Projectile.rotation = Projectile.velocity.ToRotation() + PiOver2;
+
+    // Mantener el láser unido a Artemis.
+    float positionOffset = ExoMechManagement.ExoTwinsAreInSecondPhase ? 102f : 70f;
+
+    Projectile.Center =
+        artemis.Center +
+        (artemis.rotation - PiOver2).ToRotationVector2() * positionOffset;
+}
 
         public override bool? Colliding(Rectangle projHitbox, Rectangle targetHitbox)
         {
